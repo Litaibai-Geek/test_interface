@@ -1,0 +1,14 @@
+{
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-CORS", "value": "*" }
+      ]
+    }
+  ],
+  "rewrites": [
+    { "source": "/", "destination": "/api/test" },
+    { "source": "/test", "destination": "/api/test" }
+  ]
+}
