@@ -17,14 +17,8 @@ export default function handler(req, res) {
   // 获取接口路径（去除查询参数）
   const path = req.url.split('?')[0];
   
-  // 获取请求参数（查询参数+请求体）
-  const requestParams = getRequestParams(req);
-  
-  // 生成日志信息
-  const logMessage = generateLogMessage(clientIP, path, req.method, requestParams);
-  
-  // 打印Vercel日志
-  console.log(logMessage);
+  // 打印详细的Vercel日志 - 分段打印，确保完整显示
+  printVerboseLogs(clientIP, path, req.method, req);
   
   // 获取请求信息
   const requestInfo = {
@@ -51,8 +45,8 @@ export default function handler(req, res) {
   
   // 处理 /test 路径的请求
   if (path === '/test' || path === '/api/test' || path === '/test/') {
-    // 额外的/test端点日志（更详细）
-    console.log(`[TEST接口] ${logMessage}`);
+    // 额外的/test端点日志标记
+    console.log(`[TEST接口] 请求开始: ${clientIP} - ${path} - ${req.method}`);
     
     // 处理 GET 请求
     if (req.method === 'GET') {
@@ -188,7 +182,7 @@ export default function handler(req, res) {
   // 处理根路径 / 的请求
   if (path === '/' || path === '') {
     // 打印根路径请求日志
-    console.log(`[首页] ${logMessage}`);
+    console.log(`[首页] ${clientIP} - 根路径 - ${req.method}`);
     
     return res.status(200).json({
       success: true,
@@ -264,46 +258,10 @@ function getClientIP(req) {
 }
 
 /**
- * 获取请求参数（查询参数+请求体）
+ * 打印详细的Vercel日志 - 分段打印，确保完整显示
  */
-function getRequestParams(req) {
-  let params = {};
-  
-  // 添加查询参数
-  if (req.query && Object.keys(req.query).length > 0) {
-    params.query = req.query;
-  }
-  
-  // 添加请求体参数
-  if (req.body) {
-    try {
-      // 如果是JSON字符串，尝试解析
-      if (typeof req.body === 'string') {
-        const contentType = req.headers['content-type'] || '';
-        if (contentType.includes('application/json')) {
-          params.body = JSON.parse(req.body);
-        } else {
-          params.body = req.body;
-        }
-      } else {
-        params.body = req.body;
-      }
-    } catch (e) {
-      params.body = { error: '无法解析请求体' };
-    }
-  }
-  
-  return params;
-}
-
-/**
- * 生成日志消息
- * 格式：ip-接口-请求方式-参数
- */
-function generateLogMessage(ip, path, method, params) {
-  // 格式化时间
-  const now = new Date();
-  const timeStr = now.toLocaleString('zh-CN', {
+function printVerboseLogs(ip, path, method, req) {
+  const timestamp = new Date().toLocaleString('zh-CN', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -313,34 +271,88 @@ function generateLogMessage(ip, path, method, params) {
     hour12: false
   }).replace(/\//g, '-');
   
-  // 简化路径显示
   const shortPath = path === '/' ? '根路径' : path;
   
-  // 简化参数显示
-  let paramStr = '无参数';
-  if (params.query || params.body) {
-    const paramParts = [];
-    
-    if (params.query && Object.keys(params.query).length > 0) {
-      paramParts.push(`查询:${Object.keys(params.query).join(',')}`);
-    }
-    
-    if (params.body) {
-      if (typeof params.body === 'object') {
-        paramParts.push(`体:${Object.keys(params.body).join(',')}`);
-      } else {
-        paramParts.push(`体:${typeof params.body}`);
-      }
-    }
-    
-    paramStr = paramParts.join(';');
-    
-    // 限制参数字符串长度
-    if (paramStr.length > 100) {
-      paramStr = paramStr.substring(0, 100) + '...';
-    }
+  // 打印基础信息
+  console.log(`[${timestamp}] ${ip} - ${shortPath} - ${method}`);
+  
+  // 打印查询参数（如果有）
+  if (req.query && Object.keys(req.query).length > 0) {
+    // 将查询参数分多行打印，确保Vercel能完整显示
+    console.log('📋 查询参数:');
+    Object.keys(req.query).forEach(key => {
+      console.log(`  ${key}: ${JSON.stringify(req.query[key])}`);
+    });
+  } else {
+    console.log('📋 查询参数: 无');
   }
   
-  // 构建最终日志消息
-  return `${timeStr} | ${ip} - ${shortPath} - ${method} - ${paramStr}`;
+  // 打印请求体（如果有）
+  if (req.body) {
+    console.log('📦 请求体:');
+    
+    try {
+      // 尝试解析JSON
+      let parsedBody = req.body;
+      const contentType = req.headers['content-type'] || '';
+      
+      if (contentType.includes('application/json') && typeof req.body === 'string') {
+        parsedBody = JSON.parse(req.body);
+      }
+      
+      // 打印请求体类型
+      console.log(`  类型: ${contentType || 'unknown'}`);
+      
+      // 根据类型打印内容
+      if (typeof parsedBody === 'object' && parsedBody !== null) {
+        // 打印对象键值对
+        Object.keys(parsedBody).forEach(key => {
+          const value = parsedBody[key];
+          let valueStr;
+          
+          if (typeof value === 'object' && value !== null) {
+            valueStr = JSON.stringify(value);
+            // 如果太长，截断
+            if (valueStr.length > 200) {
+              valueStr = valueStr.substring(0, 200) + '... [截断]';
+            }
+          } else {
+            valueStr = String(value);
+          }
+          
+          console.log(`  ${key}: ${valueStr}`);
+        });
+      } else {
+        // 打印非对象内容
+        let bodyStr = String(parsedBody);
+        if (bodyStr.length > 200) {
+          bodyStr = bodyStr.substring(0, 200) + '... [截断]';
+        }
+        console.log(`  内容: ${bodyStr}`);
+      }
+    } catch (error) {
+      console.log(`  解析错误: ${error.message}`);
+      console.log(`  原始内容: ${req.body}`);
+    }
+  } else {
+    console.log('📦 请求体: 无');
+  }
+  
+  // 打印重要的请求头
+  console.log('📄 请求头:');
+  const headersToShow = {
+    'user-agent': req.headers['user-agent'],
+    'content-type': req.headers['content-type'],
+    referer: req.headers['referer'] || req.headers['referrer'],
+    'content-length': req.headers['content-length'],
+    'x-forwarded-for': req.headers['x-forwarded-for']
+  };
+  
+  Object.keys(headersToShow).forEach(key => {
+    if (headersToShow[key]) {
+      console.log(`  ${key}: ${headersToShow[key]}`);
+    }
+  });
+  
+  console.log('--- 请求日志结束 ---\n');
 }
