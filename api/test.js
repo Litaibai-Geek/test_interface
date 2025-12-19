@@ -6,8 +6,25 @@ export default function handler(req, res) {
   
   // 处理预检请求
   if (req.method === 'OPTIONS') {
+    // 打印OPTIONS请求日志
+    console.log(`${getClientIP(req)} - ${req.url} - OPTIONS - 预检请求`);
     return res.status(200).end();
   }
+  
+  // 获取客户端IP
+  const clientIP = getClientIP(req);
+  
+  // 获取接口路径（去除查询参数）
+  const path = req.url.split('?')[0];
+  
+  // 获取请求参数（查询参数+请求体）
+  const requestParams = getRequestParams(req);
+  
+  // 生成日志信息
+  const logMessage = generateLogMessage(clientIP, path, req.method, requestParams);
+  
+  // 打印Vercel日志
+  console.log(logMessage);
   
   // 获取请求信息
   const requestInfo = {
@@ -15,13 +32,13 @@ export default function handler(req, res) {
     timestampReadable: new Date().toLocaleString('zh-CN'),
     method: req.method,
     url: req.url,
-    path: req.url.split('?')[0], // 只取路径部分，不包含查询参数
+    path: path,
     headers: req.headers,
     query: req.query,
     body: req.body,
     cookies: req.cookies,
     // 获取客户端IP
-    ip: req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.connection.remoteAddress,
+    ip: clientIP,
     // Vercel特定信息
     host: req.headers['host'],
     userAgent: req.headers['user-agent'],
@@ -33,8 +50,9 @@ export default function handler(req, res) {
   res.setHeader('Content-Type', 'application/json');
   
   // 处理 /test 路径的请求
-  if (requestInfo.path === '/test' || requestInfo.path === '/api/test' || requestInfo.path === '/test/') {
-    console.log(`[${requestInfo.timestampReadable}] ${req.method} ${req.url} - IP: ${requestInfo.ip}`);
+  if (path === '/test' || path === '/api/test' || path === '/test/') {
+    // 额外的/test端点日志（更详细）
+    console.log(`[TEST接口] ${logMessage}`);
     
     // 处理 GET 请求
     if (req.method === 'GET') {
@@ -168,7 +186,10 @@ export default function handler(req, res) {
   }
   
   // 处理根路径 / 的请求
-  if (requestInfo.path === '/' || requestInfo.path === '') {
+  if (path === '/' || path === '') {
+    // 打印根路径请求日志
+    console.log(`[首页] ${logMessage}`);
+    
     return res.status(200).json({
       success: true,
       message: 'API 根路径',
@@ -228,4 +249,98 @@ export default function handler(req, res) {
     message: `请求方法 ${req.method} 已处理`,
     request: requestInfo
   });
+}
+
+/**
+ * 获取客户端IP地址
+ */
+function getClientIP(req) {
+  return req.headers['x-forwarded-for'] || 
+         req.headers['x-real-ip'] || 
+         req.connection?.remoteAddress || 
+         req.socket?.remoteAddress ||
+         req.connection?.socket?.remoteAddress ||
+         'unknown-ip';
+}
+
+/**
+ * 获取请求参数（查询参数+请求体）
+ */
+function getRequestParams(req) {
+  let params = {};
+  
+  // 添加查询参数
+  if (req.query && Object.keys(req.query).length > 0) {
+    params.query = req.query;
+  }
+  
+  // 添加请求体参数
+  if (req.body) {
+    try {
+      // 如果是JSON字符串，尝试解析
+      if (typeof req.body === 'string') {
+        const contentType = req.headers['content-type'] || '';
+        if (contentType.includes('application/json')) {
+          params.body = JSON.parse(req.body);
+        } else {
+          params.body = req.body;
+        }
+      } else {
+        params.body = req.body;
+      }
+    } catch (e) {
+      params.body = { error: '无法解析请求体' };
+    }
+  }
+  
+  return params;
+}
+
+/**
+ * 生成日志消息
+ * 格式：ip-接口-请求方式-参数
+ */
+function generateLogMessage(ip, path, method, params) {
+  // 格式化时间
+  const now = new Date();
+  const timeStr = now.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).replace(/\//g, '-');
+  
+  // 简化路径显示
+  const shortPath = path === '/' ? '根路径' : path;
+  
+  // 简化参数显示
+  let paramStr = '无参数';
+  if (params.query || params.body) {
+    const paramParts = [];
+    
+    if (params.query && Object.keys(params.query).length > 0) {
+      paramParts.push(`查询:${Object.keys(params.query).join(',')}`);
+    }
+    
+    if (params.body) {
+      if (typeof params.body === 'object') {
+        paramParts.push(`体:${Object.keys(params.body).join(',')}`);
+      } else {
+        paramParts.push(`体:${typeof params.body}`);
+      }
+    }
+    
+    paramStr = paramParts.join(';');
+    
+    // 限制参数字符串长度
+    if (paramStr.length > 100) {
+      paramStr = paramStr.substring(0, 100) + '...';
+    }
+  }
+  
+  // 构建最终日志消息
+  return `${timeStr} | ${ip} - ${shortPath} - ${method} - ${paramStr}`;
 }
